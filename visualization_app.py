@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import numpy as np          # ← Make sure numpy is imported before using np.zeros
+import numpy as np
 import matplotlib.pyplot as plt
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -19,6 +19,15 @@ if uploaded_file is None:
 
 df = pd.read_csv(uploaded_file)
 
+# Rename specific school names for display:
+school_name_map = {
+    "Cane Ridge":  "School B",
+    "Hillsboro":   "School E",
+    "Maplewood":   "School F"
+}
+# Replace original names with new labels
+df["School Name"] = df["School Name"].replace(school_name_map)
+
 # Clean “Your affiliation:” and map to ILT vs SH
 df["Your affiliation:"] = df["Your affiliation:"].astype(str).str.strip()
 df["Affiliation"] = df["Your affiliation:"].map({
@@ -26,7 +35,10 @@ df["Affiliation"] = df["Your affiliation:"].map({
     "MNPS Support Hub":   "SH"
 })
 
-# PURPOSE OF WALKTHROUGHS – we need to identify & clean those columns
+# ─────────────────────────────────────────────────────────────────────────────
+# PURPOSE OF WALKTHROUGHS – identify & clean those columns
+# ─────────────────────────────────────────────────────────────────────────────
+
 label_mapping = {
     "Identify areas for instructional improvement for the math or ELA team at this school":
         "Identify areas for instructional improvement",
@@ -55,53 +67,108 @@ purpose_columns = [
     if col.startswith("The purpose of this walkthrough was to:")
 ]
 cleaned_purpose_cols = [clean_column_name(c) for c in purpose_columns]
-df_purposes = df[purpose_columns].copy()
-df_purposes.columns = cleaned_purpose_cols
 
-# Split into SH vs ILT for “purpose” counts
-support_hub_df = df[df["Affiliation"] == "SH"]
-ilt_df        = df[df["Affiliation"] == "ILT"]
-
-support_counts = (support_hub_df[purpose_columns] == "Checked").sum()
-ilt_counts     = (ilt_df[purpose_columns] == "Checked").sum()
-support_counts.index = cleaned_purpose_cols
-ilt_counts.index     = cleaned_purpose_cols
-
-support_percent = 100 * support_counts / support_counts.sum() if support_counts.sum() > 0 else pd.Series(dtype=float)
-ilt_percent     = 100 * ilt_counts     / ilt_counts.sum()     if ilt_counts.sum()     > 0 else pd.Series(dtype=float)
-
-support_percent = support_percent.sort_values(ascending=False)
-ilt_percent     = ilt_percent.sort_values(ascending=False)
+purpose_color_map = {
+    "Identify areas for instructional improvement":              "#4E79A7",  # blue
+    "Identify needed professional learning supports":             "#F28E2B",  # orange
+    "Sharpen our eye for quality instruction":                    "#E15759",  # red
+    "Monitor progress on this school's theory of action":         "#76B7B2",  # teal
+    "Identify additional curricular implementation supports":     "#59A14F",  # green
+    "Provide feedback to individual teachers":                     "#EDC948",  # yellow
+    "Evaluate individual teacher competence":                      "#B07AA1"   # purple
+}
 
 def custom_autopct(pct: float) -> str:
     return f"{pct:.1f}%" if pct > 1 else ""
 
-def plot_donut_chart(percent_series: pd.Series, title: str, color_list: list):
+def plot_donut_fixed_colors(
+    percent_series: pd.Series,
+    title: str,
+    color_map: dict
+):
     fig, ax = plt.subplots(figsize=(5, 5))
+    labels = percent_series.index.tolist()
+    values = percent_series.values
+    colors = [color_map.get(label, "#cccccc") for label in labels]
+
     wedges, texts, autotexts = ax.pie(
-        percent_series.values,
+        values,
         labels=None,
         autopct=custom_autopct,
         startangle=90,
         counterclock=False,
-        colors=color_list[: len(percent_series)],
+        colors=colors,
         wedgeprops=dict(width=0.3)
     )
     for autotext in autotexts:
         autotext.set_fontsize(8)
+
     ax.axis("equal")
     ax.set_title(title, pad=20)
     ax.legend(
         wedges,
-        percent_series.index,
-        title="",
+        labels,
+        title="Categories",
         loc="center left",
         bbox_to_anchor=(1, 0.5),
         fontsize=8
     )
     st.pyplot(fig)
 
-# WHO TALKED THE MOST – helper
+support_hub_df = df[df["Affiliation"] == "SH"]
+ilt_df        = df[df["Affiliation"] == "ILT"]
+
+support_counts = (support_hub_df[purpose_columns] == "Checked").sum()
+ilt_counts     = (ilt_df[purpose_columns] == "Checked").sum()
+
+support_counts.index = cleaned_purpose_cols
+ilt_counts.index     = cleaned_purpose_cols
+
+support_percent = (
+    100 * support_counts / support_counts.sum()
+    if support_counts.sum() > 0
+    else pd.Series(dtype=float)
+)
+ilt_percent = (
+    100 * ilt_counts / ilt_counts.sum()
+    if ilt_counts.sum() > 0
+    else pd.Series(dtype=float)
+)
+
+support_percent = support_percent.sort_index()
+ilt_percent     = ilt_percent.sort_index()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2) OVERALL “Purpose of Walkthroughs” – Donuts (fixed colors)
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.header("Overall: Purpose of Walkthroughs (SH vs ILT)")
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("Support Hub (SH)")
+    if not support_percent.empty:
+        plot_donut_fixed_colors(
+            support_percent,
+            "Support Hub: Purpose of Walkthroughs",
+            purpose_color_map
+        )
+    else:
+        st.info("No Support Hub data to show.")
+with col2:
+    st.subheader("ILT")
+    if not ilt_percent.empty:
+        plot_donut_fixed_colors(
+            ilt_percent,
+            "ILT: Purpose of Walkthroughs",
+            purpose_color_map
+        )
+    else:
+        st.info("No ILT data to show.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WHO TALKED THE MOST – define fixed color map
+# ─────────────────────────────────────────────────────────────────────────────
+
 talk_column = "Who talked the most during the debrief conversation?"
 label_map_talk = {
     "No one person spoke significantly more than others": "No single dominant voice",
@@ -110,16 +177,54 @@ label_map_talk = {
     "The executive director(s)": "The Executive Director"
 }
 
+talk_color_map = {
+    "No single dominant voice": "#4E79A7",  # blue
+    "Other SH Members":          "#F28E2B",  # orange
+    "Other ILT Members":         "#59A14F",  # green
+    "The Executive Director":    "#E15759"   # red
+}
+
 def get_talk_percentages(df_subset: pd.DataFrame) -> pd.Series:
     counts = df_subset[talk_column].value_counts()
     counts.index = [label_map_talk.get(lbl, lbl) for lbl in counts.index]
     percent = 100 * counts / counts.sum() if counts.sum() > 0 else pd.Series(dtype=float)
-    return percent.sort_values(ascending=False)
+    return percent.sort_index()
 
 support_talk_percent = get_talk_percentages(support_hub_df)
 ilt_talk_percent     = get_talk_percentages(ilt_df)
 
-# FOCUS AREAS – declare once at top so all sections can use it
+# ─────────────────────────────────────────────────────────────────────────────
+# 3) OVERALL “Who Talked the Most” – Donuts (fixed colors)
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.markdown("---")
+st.header("Overall: Who Talked the Most During Debrief Conversations")
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("Support Hub (SH)")
+    if not support_talk_percent.empty:
+        plot_donut_fixed_colors(
+            support_talk_percent,
+            "Support Hub: Who Talked the Most",
+            talk_color_map
+        )
+    else:
+        st.info("No SH “who talked” data.")
+with col2:
+    st.subheader("ILT")
+    if not ilt_talk_percent.empty:
+        plot_donut_fixed_colors(
+            ilt_talk_percent,
+            "ILT: Who Talked the Most",
+            talk_color_map
+        )
+    else:
+        st.info("No ILT “who talked” data.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FOCUS AREAS – declare once for overall and school‐level
+# ─────────────────────────────────────────────────────────────────────────────
+
 focus_columns = {
     "Staying on pace in the curriculum":                        "Curriculum Pacing",
     "Using the curriculum with integrity":                       "Curricular Integrity",
@@ -142,41 +247,6 @@ bar_colors = [
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2) OVERALL “Purpose of Walkthroughs” – Donuts
-# ─────────────────────────────────────────────────────────────────────────────
-
-st.header("Overall: Purpose of Walkthroughs (SH vs ILT)")
-col1, col2 = st.columns(2)
-with col1:
-    st.subheader("Support Hub (SH)")
-    plot_donut_chart(support_percent, "Support Hub: Purpose", [
-        "#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F", "#EDC948", "#B07AA1"
-    ])
-with col2:
-    st.subheader("ILT")
-    plot_donut_chart(ilt_percent, "ILT: Purpose", [
-        "#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F", "#EDC948", "#B07AA1"
-    ])
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 3) OVERALL “Who Talked the Most” – Donuts
-# ─────────────────────────────────────────────────────────────────────────────
-
-st.markdown("---")
-st.header("Overall: Who Talked the Most During Debrief Conversations")
-col1, col2 = st.columns(2)
-with col1:
-    st.subheader("Support Hub (SH)")
-    plot_donut_chart(support_talk_percent, "Support Hub: Who Talked Most", [
-        "#B07AA1", "#59A14F", "#F28E2B", "#4E79A7"
-    ])
-with col2:
-    st.subheader("ILT")
-    plot_donut_chart(ilt_talk_percent, "ILT: Who Talked Most", [
-        "#B07AA1", "#59A14F", "#F28E2B", "#4E79A7"
-    ])
-
-# ─────────────────────────────────────────────────────────────────────────────
 # 4) OVERALL “Focus Areas” – Grouped Stacked Bars (ILT vs SH)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -188,7 +258,6 @@ focus_labels = list(focus_columns.values())
 n_focus      = len(focus_keys)
 n_resp       = len(response_order)
 
-# Build ILT_data and SH_data (n_focus × n_resp)
 df_focus_all = df.dropna(subset=["Affiliation"] + focus_keys)
 
 ILT_data = np.zeros((n_focus, n_resp))
@@ -223,10 +292,12 @@ ax.set_ylim(-10, 100)
 bottom_ilt = np.zeros(n_focus)
 bottom_sh  = np.zeros(n_focus)
 
-for j in range(n_resp):
+for j in reversed(range(n_resp)):
+    ilt_vals = ILT_data[:, j]
+    sh_vals  = SH_data[:,  j]
     ax.bar(
         x - bar_width / 2,
-        ILT_data[:, j],
+        ilt_vals,
         bar_width,
         bottom=bottom_ilt,
         color=bar_colors[j],
@@ -234,21 +305,21 @@ for j in range(n_resp):
     )
     ax.bar(
         x + bar_width / 2,
-        SH_data[:, j],
+        sh_vals,
         bar_width,
         bottom=bottom_sh,
         color=bar_colors[j],
         edgecolor="white"
     )
-    bottom_ilt += ILT_data[:, j]
-    bottom_sh  += SH_data[:, j]
+    bottom_ilt += ilt_vals
+    bottom_sh  += sh_vals
+
 
 ax.set_ylabel("% of respondents", fontsize=11)
 ax.set_title("By affiliation, focus of the debrief conversation", fontsize=14)
 ax.set_xticks(x)
 ax.set_xticklabels(focus_labels, rotation=20, ha="right", fontsize=10)
 
-# Place ILT/SH labels below each bar
 for i in range(n_focus):
     ax.text(
         x[i] - bar_width / 2,
@@ -303,7 +374,10 @@ school_df = df[df["School Name"] == selected_school]
 
 st.subheader(f"Breakdown for: {selected_school}")
 
-# --- 5a) Purpose of Walkthroughs at this School ---
+# ─────────────────────────────────────────────────────────────────────────────
+# 5a) Purpose of Walkthroughs at this School (fixed colors)
+# ─────────────────────────────────────────────────────────────────────────────
+
 st.markdown("**Purpose of Walkthroughs (SH vs ILT at this school)**")
 
 school_sh  = school_df[school_df["Affiliation"] == "SH"]
@@ -326,33 +400,35 @@ school_ilt_percent = (
     else pd.Series(dtype=float)
 )
 
-school_support_percent = school_support_percent.sort_values(ascending=False)
-school_ilt_percent     = school_ilt_percent.sort_values(ascending=False)
+school_support_percent = school_support_percent.sort_index()
+school_ilt_percent     = school_ilt_percent.sort_index()
 
 col1, col2 = st.columns(2)
 with col1:
     st.write("**Support Hub (SH)**")
     if not school_support_percent.empty:
-        plot_donut_chart(
+        plot_donut_fixed_colors(
             school_support_percent,
-            f"{selected_school} – SH: Purpose",
-            ["#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F", "#EDC948", "#B07AA1"]
+            f"{selected_school} – SH: Purpose of Walkthroughs",
+            purpose_color_map
         )
     else:
         st.info("No SH responses for this school.")
-
 with col2:
     st.write("**ILT**")
     if not school_ilt_percent.empty:
-        plot_donut_chart(
+        plot_donut_fixed_colors(
             school_ilt_percent,
-            f"{selected_school} – ILT: Purpose",
-            ["#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F", "#EDC948", "#B07AA1"]
+            f"{selected_school} – ILT: Purpose of Walkthroughs",
+            purpose_color_map
         )
     else:
         st.info("No ILT responses for this school.")
 
-# --- 5b) Who Talked the Most at this school ---
+# ─────────────────────────────────────────────────────────────────────────────
+# 5b) Who Talked the Most at this school (fixed colors)
+# ─────────────────────────────────────────────────────────────────────────────
+
 st.markdown("---")
 st.subheader("Who Talked the Most During Debrief (SH vs ILT, by school)")
 
@@ -363,21 +439,20 @@ col1, col2 = st.columns(2)
 with col1:
     st.write("**Support Hub (SH)**")
     if not school_support_talk.empty:
-        plot_donut_chart(
+        plot_donut_fixed_colors(
             school_support_talk,
-            f"{selected_school} – SH: Who Talked Most",
-            ["#B07AA1", "#59A14F", "#F28E2B", "#4E79A7"]
+            f"{selected_school} – SH: Who Talked the Most",
+            talk_color_map
         )
     else:
         st.info("No SH “who talked” data for this school.")
-
 with col2:
     st.write("**ILT**")
     if not school_ilt_talk.empty:
-        plot_donut_chart(
+        plot_donut_fixed_colors(
             school_ilt_talk,
-            f"{selected_school} – ILT: Who Talked Most",
-            ["#B07AA1", "#59A14F", "#F28E2B", "#4E79A7"]
+            f"{selected_school} – ILT: Who Talked the Most",
+            talk_color_map
         )
     else:
         st.info("No ILT “who talked” data for this school.")
@@ -428,10 +503,12 @@ ax.set_ylim(-10, 100)
 bottom_ilt = np.zeros(n_focus)
 bottom_sh  = np.zeros(n_focus)
 
-for j in range(n_resp):
+for j in reversed(range(n_resp)):
+    ilt_vals = ILT_data[:, j]
+    sh_vals  = SH_data[:,  j]
     ax.bar(
         x - bar_width / 2,
-        ILT_school_data[:, j],
+        ilt_vals,
         bar_width,
         bottom=bottom_ilt,
         color=bar_colors[j],
@@ -439,14 +516,15 @@ for j in range(n_resp):
     )
     ax.bar(
         x + bar_width / 2,
-        SH_school_data[:, j],
+        sh_vals,
         bar_width,
         bottom=bottom_sh,
         color=bar_colors[j],
         edgecolor="white"
     )
-    bottom_ilt += ILT_school_data[:, j]
-    bottom_sh  += SH_school_data[:, j]
+    bottom_ilt += ilt_vals
+    bottom_sh  += sh_vals
+
 
 ax.set_ylabel("% of respondents", fontsize=11)
 ax.set_title(f"{selected_school} – Focus Areas (SH vs ILT)", fontsize=13)
@@ -483,7 +561,6 @@ ax.legend(
     loc="upper left",
     fontsize=8
 )
-
 ax.yaxis.grid(True, linestyle="--", alpha=0.4)
 plt.tight_layout()
 st.pyplot(fig)
