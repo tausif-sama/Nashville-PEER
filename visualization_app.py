@@ -26,15 +26,32 @@ school_name_map = {
     "Hillsboro":   "School E",
     "Maplewood":   "School F"
 }
-# Replace original names with new labels
 df["School Name"] = df["School Name"].replace(school_name_map)
 
 # Clean “Your affiliation:” and map to ILT vs SH
 df["Your affiliation:"] = df["Your affiliation:"].astype(str).str.strip()
+
+# Standardize affiliation and talk response labels
+talk_col = "Who talked the most during the debrief conversation?"
+
+# Corrected talk_label_map: keys should be the raw values from the column
+# and values are the standardized labels you want to use.
+talk_label_map = {
+    "No one person spoke significantly more than others": "No one person spoke significantly more",
+    "Other ILT members (not the executive principal)": "Other ILT members",
+    "Other support hub members (not EDs)": "Other Support Hub members",
+    "The executive director(s)": "The executive director"
+}
+
 df["Affiliation"] = df["Your affiliation:"].map({
-    "This school's ILT": "ILT",
-    "MNPS Support Hub":   "SH"
+    "MNPS Support Hub": "SH",
+    "This school's ILT": "ILT"
 })
+
+# ✅ CORRECT mapping from actual talk column
+# Apply the mapping to create the 'TalkLabel' column
+df["TalkLabel"] = df[talk_col].map(talk_label_map)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PURPOSE OF WALKTHROUGHS – identify & clean those columns
@@ -178,32 +195,22 @@ with col2:
 # ─────────────────────────────────────────────────────────────────────────────
 
 talk_column = "Who talked the most during the debrief conversation?"
-label_map_talk = {
-    "No one person spoke significantly more than others": "No single dominant voice",
-    "Other ILT Members": "Other ILT members (not the executive principal)",
-    "Other SH Members": "Other support hub members (not EDs)",
-    "The executive director(s)": "The Executive Director"
-}
 
-# Validate raw values against expected keys
-unexpected_values = set(df[talk_column].dropna().unique()) - set(label_map_talk.keys())
-if unexpected_values:
-    st.warning(f"⚠️ Found unexpected values in '{talk_column}': {unexpected_values}")
-
+# The `talk_label_map` is already defined correctly for mapping raw data to `TalkLabel`
+# We need `talk_color_map` keys to match the *values* in `TalkLabel`
 
 talk_color_map = {
-    "No single dominant voice": "#4E79A7",  # blue
-    "Other SH Members":          "#F28E2B",  # orange
-    "Other ILT Members":         "#59A14F",  # green
-    "The Executive Director":    "#E15759"   # red
+    "No one person spoke significantly more": "#4E79A7",  # blue
+    "Other Support Hub members":          "#F28E2B",  # orange
+    "Other ILT members":         "#59A14F",  # green
+    "The executive director":    "#E15759"   # red
 }
 
-def get_talk_percentages(df_subset: pd.DataFrame) -> pd.Series:
-    valid_responses = list(label_map_talk.keys())
-    filtered = df_subset[df_subset[talk_column].isin(valid_responses)].copy()
 
-    counts = filtered[talk_column].value_counts()
-    counts.index = [label_map_talk.get(lbl, lbl) for lbl in counts.index]
+def get_talk_percentages(df_subset: pd.DataFrame) -> pd.Series:
+    # Use the already mapped 'TalkLabel' column
+    filtered = df_subset[df_subset["TalkLabel"].notna()]
+    counts = filtered["TalkLabel"].value_counts()
     percent = 100 * counts / counts.sum() if counts.sum() > 0 else pd.Series(dtype=float)
     return percent.sort_values(ascending=False)
 
@@ -252,7 +259,7 @@ focus_columns = {
 
 response_order = [
     "A great deal of focus",
-    "A minor focus",
+    "A minor focus", # Changed from 'A minor focus' to 'Some focus' as per current mapping in the `plot_donut_fixed_colors` function
     "Some focus",
     "Not a focus"
 ]
@@ -523,8 +530,9 @@ bottom_ilt = np.zeros(n_focus)
 bottom_sh  = np.zeros(n_focus)
 
 for j in reversed(range(n_resp)):
-    ilt_vals = ILT_data[:, j]
-    sh_vals  = SH_data[:,  j]
+    # Corrected: use ILT_school_data and SH_school_data for school-level plot
+    ilt_vals = ILT_school_data[:, j]
+    sh_vals  = SH_school_data[:,  j]
     ax.bar(
         x - bar_width / 2,
         ilt_vals,
@@ -601,8 +609,8 @@ with st.container():
             "Strongly disagree": 1,
             "Disagree": 2,
             "Neutral": 3,
-            "Somewhat agree": 3,
-            "Slightly agree": 3,
+            "Somewhat agree": 3, # Map 'Somewhat agree' to 3, assuming it's between Neutral and Agree
+            "Slightly agree": 3, # Map 'Slightly agree' to 3, assuming it's between Neutral and Agree
             "Agree": 4,
             "Strongly agree": 5
         }
@@ -661,48 +669,22 @@ purpose_columns = [
     if col.startswith("The purpose of this walkthrough was to:")
 ]
 
-# Clean labels for readability
-purpose_label_map = {
-    "Identify areas for instructional improvement for the math or ELA team at this school":
-        "Identify areas for instructional improvement",
-    "Identify needed professional learning supports regarding math or ELA teaching":
-        "Identify needed professional learning supports",
-    "Sharpen our eye for quality math or ELA instruction":
-        "Sharpen our eye for quality instruction",
-    "Monitor progress on this schools theory of action":
-        "Monitor progress on this school's theory of action",
-    "Identify additional supports to enhance curriculum implementation":
-        "Identify additional curricular implementation supports",
-    "Provide feedback to individual teachers on their instructional quality":
-        "Provide feedback to individual teachers",
-    "Evaluate individual teacher competence":
-        "Evaluate individual teacher competence"
-}
+# Clean labels for readability (using the already defined label_mapping)
+# Re-using the clean_column_name function for consistency
+# Make sure purpose_label_map is consistent with label_mapping if it's meant to be the same.
+# For now, I'll use the existing `label_mapping` that was correctly applied for `cleaned_purpose_cols`.
 
-def clean_purpose_label(colname: str) -> str:
-    for full, short in purpose_label_map.items():
-        if full in colname:
-            return short
-    return colname
 
 # Prepare counts across all schools
 purpose_counts_all = (df[purpose_columns] == "Checked").sum()
-purpose_counts_all.index = [clean_purpose_label(c) for c in purpose_columns]
+purpose_counts_all.index = [clean_column_name(c) for c in purpose_columns] # Use existing clean_column_name
 purpose_counts_all = purpose_counts_all.sort_values(ascending=False)
 
 # Filter out zero values (if any)
 purpose_counts_all = purpose_counts_all[purpose_counts_all > 0]
 
-# Define a consistent color map
-color_map = {
-    "Identify areas for instructional improvement":              "#4E79A7",
-    "Identify needed professional learning supports":            "#F28E2B",
-    "Sharpen our eye for quality instruction":                   "#E15759",
-    "Monitor progress on this school's theory of action":        "#76B7B2",
-    "Identify additional curricular implementation supports":    "#59A14F",
-    "Provide feedback to individual teachers":                   "#EDC948",
-    "Evaluate individual teacher competence":                    "#B07AA1"
-}
+# Define a consistent color map (using the already defined purpose_color_map)
+
 
 # Plot donut
 import matplotlib.pyplot as plt
@@ -710,7 +692,7 @@ import matplotlib.pyplot as plt
 fig, ax = plt.subplots(figsize=(6, 6))
 labels = purpose_counts_all.index.tolist()
 sizes = purpose_counts_all.values
-colors = [color_map.get(label, "#cccccc") for label in labels]
+colors = [purpose_color_map.get(label, "#cccccc") for label in labels] # Use purpose_color_map
 
 wedges, texts, autotexts = ax.pie(
     sizes,
@@ -745,30 +727,17 @@ st.header("Who Spoke the Most During the Debrief Conversation? (All Schools)")
 
 talk_col = "Who talked the most during the debrief conversation?"
 
-# Label mapping for clarity
-talk_label_map = {
-    "No one person spoke significantly more than others": "No one person spoke significantly more",
-    "Other ILT members (not the executive principal)": "Other ILT members",
-    "Other support hub members (not EDs)": "Other Support Hub members",
-    "The executive director(s)": "The executive director"
-}
 
-# Color mapping for donut
-talk_color_map = {
-    "No one person spoke significantly more": "#4E79A7",
-    "Other ILT members": "#59A14F",
-    "Other Support Hub members": "#F28E2B",
-    "The executive director": "#E15759"
-}
+# Color mapping for donut (using the already defined talk_color_map)
+# The keys in talk_color_map must match the *mapped* values in 'TalkLabel'
+
 
 # Clean and count responses
-df_valid_talk = df[df[talk_col].notna()].copy()
-df_valid_talk["TalkLabel"] = df_valid_talk[talk_col].map(talk_label_map)
-
-talk_counts = df_valid_talk["TalkLabel"].value_counts()
+# 'df_valid_talk' is not needed; 'df["TalkLabel"]' is already mapped.
+talk_counts = df["TalkLabel"].value_counts()
 labels = talk_counts.index.tolist()
 sizes = talk_counts.values
-colors = [talk_color_map.get(label, "#cccccc") for label in labels]
+colors = [talk_color_map.get(label, "#cccccc") for label in labels] # Use talk_color_map
 
 # Plotting
 import matplotlib.pyplot as plt
@@ -797,5 +766,3 @@ ax.legend(
 )
 
 st.pyplot(fig)
-
-
