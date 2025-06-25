@@ -4,7 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # ─────────────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Walkthrough Perspectives Dashboard", layout="wide")
+st.set_page_config(page_title="Walkthrough Survey Data Analysis Dashboard", layout="centered")
+
 st.title("Walkthrough Perspectives Dashboard")
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -582,3 +583,219 @@ ax.legend(
 ax.yaxis.grid(True, linestyle="--", alpha=0.4)
 plt.tight_layout()
 st.pyplot(fig)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6) LINE CHART – All Schools: Theory-of-Action Perception Over Time
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.markdown("---")
+with st.container():
+    st.header("Trend: Debrief Felt Connected to the School's Theory of Action (All Schools Combined)")
+
+    theory_col = "Today's debrief discussion felt connected to this school's theory of action"
+
+    if all(col in df.columns for col in ["Date", theory_col]):
+        # Updated Likert mapping including all observed values
+        likert_map = {
+            "Strongly disagree": 1,
+            "Disagree": 2,
+            "Neutral": 3,
+            "Somewhat agree": 3,
+            "Slightly agree": 3,
+            "Agree": 4,
+            "Strongly agree": 5
+        }
+
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df["TheoryScore"] = df[theory_col].map(likert_map)
+
+        df_valid = df.dropna(subset=["Date", "TheoryScore"]).copy()
+        df_valid["Date"] = df_valid["Date"].dt.date
+
+        # Group and calculate average
+        trend_all = (
+            df_valid.groupby("Date")["TheoryScore"]
+            .mean()
+            .reset_index()
+            .rename(columns={"TheoryScore": "AvgScore"})
+        )
+
+        if trend_all.empty:
+            st.info("📉 No valid data found to plot the trend.")
+        else:
+            import matplotlib.pyplot as plt
+
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(trend_all["Date"], trend_all["AvgScore"], marker="o", linewidth=3, color="#126782")
+
+            ax.set_title("All Schools – Avg Agreement: Debrief Connected to School's Theory of Action", fontsize=12)
+            ax.set_ylabel("Average Agreement (1–5)")
+            ax.set_ylim(3, 5)
+            ax.grid(True, linestyle="--", alpha=0.5)
+
+            ax.set_xticks(trend_all["Date"])
+            ax.set_xticklabels(
+                 [d.strftime("%#m/%#d/%Y") for d in trend_all["Date"]],
+                  rotation=45,
+                 ha="right"
+                )
+
+
+            plt.tight_layout()
+            st.pyplot(fig)
+    else:
+        st.info("❗ Required data not found to generate theory-of-action trend chart.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7) DONUT CHART – Purpose of Walkthrough (All Schools Combined)
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.markdown("---")
+st.header("Purpose of Walkthroughs (All Schools Combined)")
+
+# Identify relevant columns
+purpose_columns = [
+    col for col in df.columns
+    if col.startswith("The purpose of this walkthrough was to:")
+]
+
+# Clean labels for readability
+purpose_label_map = {
+    "Identify areas for instructional improvement for the math or ELA team at this school":
+        "Identify areas for instructional improvement",
+    "Identify needed professional learning supports regarding math or ELA teaching":
+        "Identify needed professional learning supports",
+    "Sharpen our eye for quality math or ELA instruction":
+        "Sharpen our eye for quality instruction",
+    "Monitor progress on this schools theory of action":
+        "Monitor progress on this school's theory of action",
+    "Identify additional supports to enhance curriculum implementation":
+        "Identify additional curricular implementation supports",
+    "Provide feedback to individual teachers on their instructional quality":
+        "Provide feedback to individual teachers",
+    "Evaluate individual teacher competence":
+        "Evaluate individual teacher competence"
+}
+
+def clean_purpose_label(colname: str) -> str:
+    for full, short in purpose_label_map.items():
+        if full in colname:
+            return short
+    return colname
+
+# Prepare counts across all schools
+purpose_counts_all = (df[purpose_columns] == "Checked").sum()
+purpose_counts_all.index = [clean_purpose_label(c) for c in purpose_columns]
+purpose_counts_all = purpose_counts_all.sort_values(ascending=False)
+
+# Filter out zero values (if any)
+purpose_counts_all = purpose_counts_all[purpose_counts_all > 0]
+
+# Define a consistent color map
+color_map = {
+    "Identify areas for instructional improvement":              "#4E79A7",
+    "Identify needed professional learning supports":            "#F28E2B",
+    "Sharpen our eye for quality instruction":                   "#E15759",
+    "Monitor progress on this school's theory of action":        "#76B7B2",
+    "Identify additional curricular implementation supports":    "#59A14F",
+    "Provide feedback to individual teachers":                   "#EDC948",
+    "Evaluate individual teacher competence":                    "#B07AA1"
+}
+
+# Plot donut
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(6, 6))
+labels = purpose_counts_all.index.tolist()
+sizes = purpose_counts_all.values
+colors = [color_map.get(label, "#cccccc") for label in labels]
+
+wedges, texts, autotexts = ax.pie(
+    sizes,
+    labels=None,
+    colors=colors,
+    autopct=lambda pct: f"{pct:.1f}%" if pct > 2 else "",
+    startangle=90,
+    counterclock=False,
+    wedgeprops=dict(width=0.3)
+)
+
+ax.axis("equal")
+ax.set_title("Proportions of respondents who said the purpose of the walkthrough was...", pad=20)
+
+ax.legend(
+    wedges,
+    labels,
+    title="Purpose",
+    loc="center left",
+    bbox_to_anchor=(1, 0.5),
+    fontsize=8
+)
+
+st.pyplot(fig)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DONUT CHART – Who Talked the Most During Debrief (All Schools, Actual Data)
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.markdown("---")
+st.header("Who Spoke the Most During the Debrief Conversation? (All Schools)")
+
+talk_col = "Who talked the most during the debrief conversation?"
+
+# Label mapping for clarity
+talk_label_map = {
+    "No one person spoke significantly more than others": "No one person spoke significantly more",
+    "Other ILT members (not the executive principal)": "Other ILT members",
+    "Other support hub members (not EDs)": "Other Support Hub members",
+    "The executive director(s)": "The executive director"
+}
+
+# Color mapping for donut
+talk_color_map = {
+    "No one person spoke significantly more": "#4E79A7",
+    "Other ILT members": "#59A14F",
+    "Other Support Hub members": "#F28E2B",
+    "The executive director": "#E15759"
+}
+
+# Clean and count responses
+df_valid_talk = df[df[talk_col].notna()].copy()
+df_valid_talk["TalkLabel"] = df_valid_talk[talk_col].map(talk_label_map)
+
+talk_counts = df_valid_talk["TalkLabel"].value_counts()
+labels = talk_counts.index.tolist()
+sizes = talk_counts.values
+colors = [talk_color_map.get(label, "#cccccc") for label in labels]
+
+# Plotting
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(6, 6))
+wedges, texts, autotexts = ax.pie(
+    sizes,
+    labels=None,
+    colors=colors,
+    autopct=lambda pct: f"{pct:.1f}%" if pct > 2 else "",
+    startangle=90,
+    counterclock=False,
+    wedgeprops=dict(width=0.3)
+)
+
+ax.axis("equal")
+ax.set_title("Who spoke the most during the debrief conversation?", pad=20)
+
+ax.legend(
+    wedges,
+    labels,
+    title="Speaker",
+    loc="center left",
+    bbox_to_anchor=(1, 0.5),
+    fontsize=9
+)
+
+st.pyplot(fig)
+
+
