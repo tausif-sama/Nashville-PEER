@@ -46,27 +46,30 @@ label_mapping = {
         "Identify needed professional learning supports",
     "Sharpen our eye for quality math or ELA instruction":
         "Sharpen our eye for quality instruction",
-    "Monitor progress on this school's math or ELA theory of action":
+    "Monitor progress on this schools theory of action":  # Note: no apostrophe in "schools"
         "Monitor progress on this school's theory of action",
-    "Identify additional curricular implementation supports":
+    "Identify additional supports to enhance curriculum implementation":
         "Identify additional curricular implementation supports",
-    "Provide feedback to individual teachers":
+    "Provide feedback to individual teachers on their instructional quality":
         "Provide feedback to individual teachers",
     "Evaluate individual teacher competence":
         "Evaluate individual teacher competence"
 }
 
+
 def clean_column_name(colname: str) -> str:
     for long_text, short_text in label_mapping.items():
-        if f"(choice={long_text})" in colname:
+        if long_text in colname:
             return short_text
     return colname
+
 
 purpose_columns = [
     col for col in df.columns
     if col.startswith("The purpose of this walkthrough was to:")
 ]
 cleaned_purpose_cols = [clean_column_name(c) for c in purpose_columns]
+
 
 purpose_color_map = {
     "Identify areas for instructional improvement":              "#4E79A7",  # blue
@@ -86,6 +89,9 @@ def plot_donut_fixed_colors(
     title: str,
     color_map: dict
 ):
+    # Sort values descending so the largest slice starts at top (clockwise)
+    percent_series = percent_series.sort_values(ascending=False)
+
     fig, ax = plt.subplots(figsize=(5, 5))
     labels = percent_series.index.tolist()
     values = percent_series.values
@@ -108,12 +114,13 @@ def plot_donut_fixed_colors(
     ax.legend(
         wedges,
         labels,
-        title="Categories",
+        title="Legend",
         loc="center left",
         bbox_to_anchor=(1, 0.5),
         fontsize=8
     )
     st.pyplot(fig)
+
 
 support_hub_df = df[df["Affiliation"] == "SH"]
 ilt_df        = df[df["Affiliation"] == "ILT"]
@@ -172,10 +179,16 @@ with col2:
 talk_column = "Who talked the most during the debrief conversation?"
 label_map_talk = {
     "No one person spoke significantly more than others": "No single dominant voice",
-    "Other SH Members":  "Other SH Members",
-    "Other ILT Members": "Other ILT Members",
+    "Other ILT Members": "Other ILT members (not the executive principal)",
+    "Other SH Members": "Other support hub members (not EDs)",
     "The executive director(s)": "The Executive Director"
 }
+
+# Validate raw values against expected keys
+unexpected_values = set(df[talk_column].dropna().unique()) - set(label_map_talk.keys())
+if unexpected_values:
+    st.warning(f"⚠️ Found unexpected values in '{talk_column}': {unexpected_values}")
+
 
 talk_color_map = {
     "No single dominant voice": "#4E79A7",  # blue
@@ -185,10 +198,14 @@ talk_color_map = {
 }
 
 def get_talk_percentages(df_subset: pd.DataFrame) -> pd.Series:
-    counts = df_subset[talk_column].value_counts()
+    valid_responses = list(label_map_talk.keys())
+    filtered = df_subset[df_subset[talk_column].isin(valid_responses)].copy()
+
+    counts = filtered[talk_column].value_counts()
     counts.index = [label_map_talk.get(lbl, lbl) for lbl in counts.index]
     percent = 100 * counts / counts.sum() if counts.sum() > 0 else pd.Series(dtype=float)
-    return percent.sort_index()
+    return percent.sort_values(ascending=False)
+
 
 support_talk_percent = get_talk_percentages(support_hub_df)
 ilt_talk_percent     = get_talk_percentages(ilt_df)
@@ -240,11 +257,12 @@ response_order = [
 ]
 
 bar_colors = [
-    "#4E79A7",  # blue  → A great deal of focus
-    "#F28E2B",  # orange → A minor focus
-    "#59A14F",  # green → Some focus
-    "#E15759"   # red   → Not a focus
+    "#2F6130",  # dark green
+    "#59A14F",  # base green
+    "#85BC74",  # medium-light green
+    "#A8D09C"   # light green
 ]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4) OVERALL “Focus Areas” – Grouped Stacked Bars (ILT vs SH)
@@ -316,7 +334,7 @@ for j in reversed(range(n_resp)):
 
 
 ax.set_ylabel("% of respondents", fontsize=11)
-ax.set_title("By affiliation, focus of the debrief conversation", fontsize=14)
+ax.set_title("By affiliation, perceptions that the debrief conversation included a focus on:", fontsize=14)
 ax.set_xticks(x)
 ax.set_xticklabels(focus_labels, rotation=20, ha="right", fontsize=10)
 
