@@ -359,28 +359,30 @@ bottom_ilt = np.zeros(n_focus) # Tracks the cumulative height for ILT stacked ba
 bottom_sh  = np.zeros(n_focus) # Tracks the cumulative height for SH stacked bars
 
 # Loop in reverse order of responses for correct stacking (e.g., 'A great deal of focus' at the bottom)
-for j in reversed(range(n_resp)):
+for j in (range(n_resp)):
     ilt_vals = ILT_data[:, j]
     sh_vals  = SH_data[:,  j]
+    
+    # SWAPPED ILT and SH bar positions
     ax.bar(
-        x - bar_width / 2, # Position for ILT bars (shifted left)
+        x + bar_width / 2,  # Now ILT is on the right
         ilt_vals,
         bar_width,
         bottom=bottom_ilt,
         color=bar_colors[j],
-        edgecolor="white" # White border for separation
-        # Removed problematic label argument
+        edgecolor="white"
     )
     ax.bar(
-        x + bar_width / 2, # Position for SH bars (shifted right)
+        x - bar_width / 2,  # Now SH is on the left
         sh_vals,
         bar_width,
         bottom=bottom_sh,
         color=bar_colors[j],
         edgecolor="white"
     )
-    bottom_ilt += ilt_vals # Update bottom for next stack
+    bottom_ilt += ilt_vals
     bottom_sh  += sh_vals
+
 
 ax.set_ylabel("% of respondents", fontsize=11)
 ax.set_title("By affiliation, perceptions that the debrief conversation included a focus on:", fontsize=14, fontweight='bold', pad=20)
@@ -390,19 +392,20 @@ ax.set_xticklabels(focus_labels, rotation=20, ha="right", fontsize=10) # Rotate 
 # Add "ILT" and "SH" labels below each pair of bars
 for i in range(n_focus):
     ax.text(
-        x[i] - bar_width / 2,
-        -5, # Position below the bars
+        x[i] + bar_width / 2,  # ILT now on the right
+        -5,
         "ILT",
         ha="center", va="center",
-        fontsize=9, fontweight="bold", color='gray' # Styled for clarity
+        fontsize=9, fontweight="bold", color='gray'
     )
     ax.text(
-        x[i] + bar_width / 2,
+        x[i] - bar_width / 2,  # SH now on the left
         -5,
         "SH",
         ha="center", va="center",
         fontsize=9, fontweight="bold", color='gray'
     )
+
 
 # Create custom legend handles for the stacked bar colors
 legend_handles = [plt.Rectangle((0, 0), 1, 1, color=bar_colors[k]) for k in reversed(range(n_resp))] # Reversed for legend order
@@ -775,7 +778,7 @@ ax.set_ylim(-10, 100) # Consistent Y-axis limits
 bottom_ilt = np.zeros(n_focus)
 bottom_sh  = np.zeros(n_focus)
 
-for j in reversed(range(n_resp)):
+for j in (range(n_resp)):
     # Use the school-specific data arrays
     ilt_vals = ILT_school_data[:, j]
     sh_vals  = SH_school_data[:,  j]
