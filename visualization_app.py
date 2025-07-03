@@ -12,8 +12,25 @@ plt.style.use('seaborn-v0_8-darkgrid')
 # Set page title, icon, and layout for a better user experience
 st.set_page_config(
     page_title="Walkthrough Survey Data Analysis Dashboard",
-    layout="centered", # 'wide' or 'centered'
+    layout="wide", # 'wide' or 'centered'
     initial_sidebar_state="auto"
+)
+
+st.markdown(
+    """
+    <style>
+    /* Adjust the max-width of the main content block */
+    .block-container {
+        max-width: 950px; /* Adjust this value to your desired width (e.g., 800px, 1000px, 1200px) */
+        padding-left: 2rem; /* Optional: Adjust left inner padding */
+        padding-right: 2rem; /* Optional: Adjust right inner padding */
+        /* You can also adjust padding-top and padding-bottom if desired */
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 # Main title of the dashboard
@@ -247,6 +264,137 @@ def get_talk_percentages(df_subset: pd.DataFrame) -> pd.Series:
 # Calculate percentages for Support Hub and ILT
 support_talk_percent = get_talk_percentages(support_hub_df)
 ilt_talk_percent     = get_talk_percentages(ilt_df)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW SECTION: Agreement Proportion Table (SH vs ILT)
+# Recreates the visual from the provided image.
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.markdown("---")
+st.header("Agreement Proportions: Support Hub vs ILT")
+st.markdown("This table displays the proportion of Support Hub and ILT members who agreed with each purpose of the walkthrough, along with the difference between their perceptions.")
+
+# Calculate counts for each purpose for Support Hub and ILT
+sh_checked_counts = (support_hub_df[purpose_columns] == "Checked").sum()
+ilt_checked_counts = (ilt_df[purpose_columns] == "Checked").sum()
+
+# Calculate total responses for each affiliation for normalization
+sh_total_responses = len(support_hub_df)
+ilt_total_responses = len(ilt_df)
+
+# Calculate proportions (as percentages), handling potential division by zero
+# Use .reindex with purpose_columns to ensure all purposes are present, filling with 0 if no data
+sh_proportions = (sh_checked_counts / sh_total_responses * 100).round(1) if sh_total_responses > 0 else pd.Series(0.0, index=purpose_columns)
+ilt_proportions = (ilt_checked_counts / ilt_total_responses * 100).round(1) if ilt_total_responses > 0 else pd.Series(0.0, index=purpose_columns)
+
+# Create a DataFrame for the table
+table_data = []
+for i, purpose_raw_col in enumerate(purpose_columns):
+    purpose_label = cleaned_purpose_cols[i]
+    # Use .get() with default for robustness against missing columns in proportions Series
+    sh_prop = sh_proportions.get(purpose_raw_col, np.nan) 
+    ilt_prop = ilt_proportions.get(purpose_raw_col, np.nan)
+
+    difference = round(sh_prop - ilt_prop, 1) if pd.notna(sh_prop) and pd.notna(ilt_prop) else np.nan
+
+    table_data.append({
+        "Purpose of Walkthrough": purpose_label,
+        "Support Hub Agreement Proportion": sh_prop,
+        "ILT Agreement Proportion": ilt_prop,
+        "Difference": difference
+    })
+
+agreement_df = pd.DataFrame(table_data)
+
+# --- Helper Functions for Styling ---
+
+def get_color_gradient(value, min_val, max_val, start_rgb, end_rgb):
+    """
+    Calculates an RGB color interpolated between two colors based on a value's position
+    within a min/max range.
+    """
+    if min_val == max_val: # Avoid division by zero if range is zero
+        normalized_value = 0.5
+    else:
+        normalized_value = (value - min_val) / (max_val - min_val)
+    normalized_value = max(0, min(1, normalized_value)) # Clamp to 0-1
+
+    r = int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * normalized_value)
+    g = int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * normalized_value)
+    b = int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * normalized_value)
+    return f'rgb({r},{g},{b})'
+
+def style_proportion_cell(val):
+    """
+    Applies a green gradient background and appropriate text color for proportion cells.
+    """
+    if pd.isna(val):
+        return ''
+    
+    # Green scale for proportions: from very light green to dark green
+    start_rgb_green = (240, 255, 240) # Lightest green (almost white)
+    end_rgb_green = (0, 128, 0)       # Dark green
+    
+    bg_color = get_color_gradient(val, 0, 100, start_rgb_green, end_rgb_green)
+    
+    # Determine text color based on background luminance for readability
+    text_color = 'white' if val > 60 else 'black' # Adjusted threshold for green scale
+    return f'background-color: {bg_color}; color: {text_color}; font-weight: bold;'
+
+def style_difference_cell(val):
+    """
+    Applies a diverging color scale (blue for positive, orange/red for negative) 
+    and appropriate text color for difference cells.
+    """
+    if pd.isna(val):
+        return ''
+    
+    # Define color ranges and thresholds based on the image and typical differences
+    # For positive differences (blue gradient)
+    blue_start_rgb = (220, 230, 255) # Lighter blue (e.g., AliceBlue)
+    blue_end_rgb = (70, 130, 180)   # Steely blue (e.g., SteelBlue)
+    
+    # For negative differences (orange/red gradient)
+    red_start_rgb = (255, 230, 220) # Lighter orange/red (e.g., PeachPuff)
+    red_end_rgb = (200, 80, 0)      # Darker orange/red (e.g., DarkOrange)
+    
+    # Threshold for neutral range (differences close to zero)
+    neutral_threshold = 2.0 # Differences within -2.0 to +2.0 are considered neutral
+    
+    bg_color = ''
+    text_color = 'black' # Default text color
+
+    if val > neutral_threshold:
+        # Positive difference: blue gradient (scale from neutral_threshold to max expected positive diff)
+        # Assuming max positive difference around 25 for scaling, based on image max diff of 15
+        bg_color = get_color_gradient(val, neutral_threshold, 25, blue_start_rgb, blue_end_rgb)
+        if val > 10: text_color = 'white' # For darker blue backgrounds, use white text
+    elif val < -neutral_threshold:
+        # Negative difference: orange/red gradient (scale from min expected negative diff to -neutral_threshold)
+        # Assuming min negative difference around -40 for scaling, based on image min diff of -33.6
+        bg_color = get_color_gradient(val, -40, -neutral_threshold, red_end_rgb, red_start_rgb) # Note: start/end swapped for negative range
+        if val < -15: text_color = 'white' # For darker red backgrounds, use white text
+    else:
+        # Near zero difference: neutral light grey background
+        bg_color = '#F0F0F0' 
+
+    return f'background-color: {bg_color}; color: {text_color}; font-weight: bold;'
+
+# Apply styling to the DataFrame
+styled_agreement_df = agreement_df.style.applymap(
+    style_proportion_cell,
+    subset=["Support Hub Agreement Proportion", "ILT Agreement Proportion"]
+).applymap(
+    style_difference_cell,
+    subset=["Difference"]
+).format({
+    "Support Hub Agreement Proportion": "{:.1f}%",
+    "ILT Agreement Proportion": "{:.1f}%",
+    "Difference": "{:.1f}"
+})
+
+# Display the styled DataFrame in Streamlit
+st.dataframe(styled_agreement_df, hide_index=True, use_container_width=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3) OVERALL “Who Talked the Most” – Donuts (fixed colors)
